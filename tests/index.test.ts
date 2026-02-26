@@ -79,6 +79,36 @@ describe("wopr-plugin-soul", () => {
       await expect(plugin.shutdown()).resolves.toBeUndefined();
     });
 
+    it("should have a manifest with required fields", async () => {
+      const { default: plugin } = await import("../src/index.js");
+      expect(plugin.manifest).toBeDefined();
+      expect(plugin.manifest!.capabilities).toBeDefined();
+      expect(plugin.manifest!.category).toBe("personality");
+      expect(plugin.manifest!.tags).toContain("soul");
+      expect(plugin.manifest!.icon).toBeTruthy();
+      expect(plugin.manifest!.requires).toEqual({});
+      expect(plugin.manifest!.provides).toBeDefined();
+      expect(plugin.manifest!.lifecycle).toBeDefined();
+    });
+
+    it("should be idempotent on double shutdown", async () => {
+      const { default: plugin } = await import("../src/index.js");
+      await plugin.init(mockCtx as any);
+      await plugin.shutdown();
+      await expect(plugin.shutdown()).resolves.toBeUndefined();
+    });
+
+    it("should be re-initializable after shutdown", async () => {
+      const { default: plugin } = await import("../src/index.js");
+      await plugin.init(mockCtx as any);
+      await plugin.shutdown();
+      mockCtx.registerContextProvider.mockClear();
+      mockCtx.registerA2AServer.mockClear();
+      await plugin.init(mockCtx as any);
+      expect(mockCtx.registerContextProvider).toHaveBeenCalledTimes(1);
+      expect(mockCtx.registerA2AServer).toHaveBeenCalledTimes(1);
+    });
+
     it("should export CONTEXT_PROVIDER_NAME", async () => {
       const { CONTEXT_PROVIDER_NAME } = await import("../src/index.js");
       expect(CONTEXT_PROVIDER_NAME).toBe("soul");
@@ -91,8 +121,8 @@ describe("wopr-plugin-soul", () => {
       await plugin.init(mockCtx as any);
       const serverConfig = mockCtx.registerA2AServer.mock.calls[0][0];
       expect(serverConfig.tools).toHaveLength(2);
-      expect(serverConfig.tools[0].name).toBe("soul_get");
-      expect(serverConfig.tools[1].name).toBe("soul_update");
+      expect(serverConfig.tools[0].name).toBe("soul.get");
+      expect(serverConfig.tools[1].name).toBe("soul.update");
     });
 
     it("should have valid tool schemas", async () => {
@@ -211,8 +241,9 @@ describe("wopr-plugin-soul", () => {
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({});
-      expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Provide");
+      // isError should NOT be present per best practices
+      expect(result).not.toHaveProperty("isError");
     });
   });
 
