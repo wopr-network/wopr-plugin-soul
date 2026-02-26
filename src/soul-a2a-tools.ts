@@ -39,10 +39,10 @@ export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
     version: "1.0.0",
     tools: [
       {
-        name: "soul_get",
+        name: "soul.get",
         description:
           "Get current SOUL.md content (persona, boundaries, interaction style). Checks global identity first.",
-        inputSchema: { type: "object", properties: {} },
+        inputSchema: { type: "object", additionalProperties: false },
         async handler() {
           const sessionDir = join(SESSIONS_DIR, sessionName);
           const resolved = resolveRootFile(sessionDir, "SOUL.md");
@@ -61,7 +61,7 @@ export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
         },
       },
       {
-        name: "soul_update",
+        name: "soul.update",
         description: "Update SOUL.md content.",
         inputSchema: {
           type: "object",
@@ -112,7 +112,6 @@ export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
 
           return {
             content: [{ type: "text", text: "Provide 'content' or 'section'+'sectionContent'" }],
-            isError: true,
           };
         },
       },
