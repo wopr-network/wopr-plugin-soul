@@ -39,7 +39,7 @@ export const soulContextProvider: ContextProvider = {
             },
           };
         }
-      } catch {
+      } catch (_error: unknown) {
         // Fall through to session
       }
     }
@@ -60,7 +60,7 @@ export const soulContextProvider: ContextProvider = {
             },
           };
         }
-      } catch {
+      } catch (_error: unknown) {
         // No soul content available
       }
     }
