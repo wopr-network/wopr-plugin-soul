@@ -245,6 +245,42 @@ describe("wopr-plugin-soul", () => {
       // isError should NOT be present per best practices
       expect(result).not.toHaveProperty("isError");
     });
+
+    it("should handle section names with regex-special characters", async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        "# SOUL.md\n\n## Goals (v2)\n\nOld goals\n",
+      );
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools("test-session");
+      const updateTool = config.tools[1];
+
+      const result = await updateTool.handler({
+        section: "Goals (v2)",
+        sectionContent: "New goals",
+      });
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("New goals");
+      expect(written).not.toContain("Old goals");
+      expect(result.content[0].text).toContain('section "Goals (v2)" updated');
+    });
+
+    it("should append new section when section name has brackets", async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue("# SOUL.md\n\n## Existing\n\nStuff\n");
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools("test-session");
+      const updateTool = config.tools[1];
+
+      const result = await updateTool.handler({
+        section: "Rules [strict]",
+        sectionContent: "Be precise",
+      });
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("## Rules [strict]");
+      expect(written).toContain("Be precise");
+      expect(written).toContain("## Existing"); // original preserved
+    });
   });
 
   describe("soul context provider", () => {
