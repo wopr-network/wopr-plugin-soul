@@ -9,7 +9,7 @@
 
 import type { WOPRPlugin, WOPRPluginContext } from "@wopr-network/plugin-types";
 import { buildSoulA2ATools } from "./soul-a2a-tools.js";
-import { soulContextProvider } from "./soul-context-provider.js";
+import { buildSoulContextProvider } from "./soul-context-provider.js";
 
 const CONTEXT_PROVIDER_NAME = "soul";
 
@@ -42,6 +42,7 @@ const plugin: WOPRPlugin = {
     ctx = pluginCtx;
 
     // Register soul context provider at priority 8
+    const soulContextProvider = buildSoulContextProvider(ctx);
     ctx.registerContextProvider(soulContextProvider);
     cleanups.push(() => {
       if (ctx?.unregisterContextProvider) {
@@ -53,7 +54,7 @@ const plugin: WOPRPlugin = {
     const sessions = ctx.getSessions();
     const sessionName = sessions[0] || "default";
     if (ctx.registerA2AServer) {
-      const a2aConfig = buildSoulA2ATools(sessionName);
+      const a2aConfig = buildSoulA2ATools(ctx, sessionName);
       ctx.registerA2AServer(a2aConfig);
     }
 

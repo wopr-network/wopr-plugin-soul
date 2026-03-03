@@ -1,29 +1,25 @@
-import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import * as fs from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
-// Mock node:fs before importing modules that use it
-vi.mock("node:fs", async () => {
-  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-  return {
-    ...actual,
-    existsSync: vi.fn(),
-    readFileSync: vi.fn(),
-    writeFileSync: vi.fn(),
-  };
-});
+const mockSession = {
+  getContext: vi.fn().mockResolvedValue(null),
+  setContext: vi.fn().mockResolvedValue(undefined),
+  readConversationLog: vi.fn().mockResolvedValue([]),
+};
 
 const mockCtx = {
-  log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+  log: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
   registerContextProvider: vi.fn(),
   registerA2AServer: vi.fn(),
+  unregisterContextProvider: vi.fn(),
   getSessions: vi.fn().mockReturnValue(["test-session"]),
+  session: mockSession,
 };
 
 describe("wopr-plugin-soul", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSession.getContext.mockResolvedValue(null);
+    mockSession.setContext.mockResolvedValue(undefined);
   });
 
   describe("plugin init and shutdown", () => {
@@ -116,7 +112,7 @@ describe("wopr-plugin-soul", () => {
   });
 
   describe("soul A2A tools", () => {
-    it("should register two tools: soul_get and soul_update", async () => {
+    it("should register two tools: soul.get and soul.update", async () => {
       const { default: plugin } = await import("../src/index.js");
       await plugin.init(mockCtx as any);
       const serverConfig = mockCtx.registerA2AServer.mock.calls[0][0];
@@ -139,7 +135,7 @@ describe("wopr-plugin-soul", () => {
       }
     });
 
-    it("soul_update should have content, section, sectionContent properties", async () => {
+    it("soul.update should have content, section, sectionContent properties", async () => {
       const { default: plugin } = await import("../src/index.js");
       await plugin.init(mockCtx as any);
       const serverConfig = mockCtx.registerA2AServer.mock.calls[0][0];
@@ -150,86 +146,84 @@ describe("wopr-plugin-soul", () => {
     });
   });
 
-  describe("soul_get handler", () => {
-    it("should return 'No SOUL.md found' when file does not exist", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+  describe("soul.get handler", () => {
+    it("should return 'No SOUL.md found.' when no content in SQL", async () => {
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const result = await config.tools[0].handler({});
       expect(result.content[0].text).toBe("No SOUL.md found.");
     });
 
-    it("should return global SOUL.md content when global file exists", async () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        return String(p).includes("/data/identity/SOUL.md");
+    it("should return session SOUL.md content when session has it", async () => {
+      mockSession.getContext.mockImplementation(async (session: string, _file: string) => {
+        if (session === "test-session") return "Session persona";
+        return null;
       });
-      vi.mocked(fs.readFileSync).mockReturnValue("I am a helpful bot");
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
-      const result = await config.tools[0].handler({});
-      expect(result.content[0].text).toContain("[Source: global]");
-      expect(result.content[0].text).toContain("I am a helpful bot");
-    });
-
-    it("should fall back to session SOUL.md when global does not exist", async () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        return String(p).includes("sessions/test-session/SOUL.md");
-      });
-      vi.mocked(fs.readFileSync).mockReturnValue("Session persona");
-      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const result = await config.tools[0].handler({});
       expect(result.content[0].text).toContain("[Source: session]");
       expect(result.content[0].text).toContain("Session persona");
     });
+
+    it("should fall back to global SOUL.md when session has none", async () => {
+      mockSession.getContext.mockImplementation(async (session: string, _file: string) => {
+        if (session === "__global__") return "Global persona";
+        return null;
+      });
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
+      const result = await config.tools[0].handler({});
+      expect(result.content[0].text).toContain("[Source: global]");
+      expect(result.content[0].text).toContain("Global persona");
+    });
   });
 
-  describe("soul_update handler", () => {
-    it("should replace entire SOUL.md when content is provided", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+  describe("soul.update handler", () => {
+    it("should replace entire SOUL.md via setContext when content is provided", async () => {
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({ content: "New soul content" });
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining("SOUL.md"),
+      expect(mockSession.setContext).toHaveBeenCalledWith(
+        "test-session",
+        "SOUL.md",
         "New soul content",
+        "session",
       );
       expect(result.content[0].text).toBe("SOUL.md replaced entirely");
     });
 
-    it("should add section when SOUL.md does not exist", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+    it("should add section when no existing SOUL.md in SQL", async () => {
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({
         section: "Boundaries",
         sectionContent: "Be kind",
       });
-      expect(fs.writeFileSync).toHaveBeenCalled();
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(mockSession.setContext).toHaveBeenCalled();
+      const written = mockSession.setContext.mock.calls[0][2] as string;
       expect(written).toContain("## Boundaries");
       expect(written).toContain("Be kind");
       expect(result.content[0].text).toContain("Boundaries");
     });
 
     it("should update existing section in SOUL.md", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      mockSession.getContext.mockResolvedValue(
         "# SOUL.md\n\n## Boundaries\n\nOld content\n",
       );
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({
         section: "Boundaries",
         sectionContent: "New boundary content",
       });
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const written = mockSession.setContext.mock.calls[0][2] as string;
       expect(written).toContain("New boundary content");
       expect(written).not.toContain("Old content");
       expect(result.content[0].text).toContain('section "Boundaries" updated');
@@ -237,72 +231,67 @@ describe("wopr-plugin-soul", () => {
 
     it("should return error when neither content nor section provided", async () => {
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({});
       expect(result.content[0].text).toContain("Provide");
-      // isError should NOT be present per best practices
       expect(result).not.toHaveProperty("isError");
     });
 
     it("should handle section names with regex-special characters", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      mockSession.getContext.mockResolvedValue(
         "# SOUL.md\n\n## Goals (v2)\n\nOld goals\n",
       );
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({
         section: "Goals (v2)",
         sectionContent: "New goals",
       });
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const written = mockSession.setContext.mock.calls[0][2] as string;
       expect(written).toContain("New goals");
       expect(written).not.toContain("Old goals");
       expect(result.content[0].text).toContain('section "Goals (v2)" updated');
     });
 
     it("should append new section when section name has brackets", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue("# SOUL.md\n\n## Existing\n\nStuff\n");
+      mockSession.getContext.mockResolvedValue("# SOUL.md\n\n## Existing\n\nStuff\n");
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
-      const config = buildSoulA2ATools("test-session");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const updateTool = config.tools[1];
 
       const result = await updateTool.handler({
         section: "Rules [strict]",
         sectionContent: "Be precise",
       });
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const written = mockSession.setContext.mock.calls[0][2] as string;
       expect(written).toContain("## Rules [strict]");
       expect(written).toContain("Be precise");
-      expect(written).toContain("## Existing"); // original preserved
+      expect(written).toContain("## Existing");
     });
   });
 
   describe("soul context provider", () => {
     it("should have correct name, priority, and enabled flag", async () => {
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
-      expect(soulContextProvider.name).toBe("soul");
-      expect(soulContextProvider.priority).toBe(8);
-      expect(soulContextProvider.enabled).toBe(true);
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
+      expect(provider.name).toBe("soul");
+      expect(provider.priority).toBe(8);
+      expect(provider.enabled).toBe(true);
     });
 
-    it("should return global soul content when global file exists", async () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        return String(p).includes("/data/identity/SOUL.md");
+    it("should return global soul content when global entry exists", async () => {
+      mockSession.getContext.mockImplementation(async (session: string, _file: string) => {
+        if (session === "__global__") return "Global persona";
+        return null;
       });
-      vi.mocked(fs.readFileSync).mockReturnValue("Global persona");
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
 
-      const result = await soulContextProvider.getContext("test-session", {} as any);
+      const result = await provider.getContext("test-session", {} as any);
       expect(result).not.toBeNull();
       expect(result!.content).toContain("Soul (Global)");
       expect(result!.content).toContain("Global persona");
@@ -312,15 +301,14 @@ describe("wopr-plugin-soul", () => {
     });
 
     it("should fall back to session soul content", async () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        return String(p).includes("sessions/test-session/SOUL.md");
+      mockSession.getContext.mockImplementation(async (session: string, _file: string) => {
+        if (session === "test-session") return "Session persona";
+        return null;
       });
-      vi.mocked(fs.readFileSync).mockReturnValue("Session persona");
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
 
-      const result = await soulContextProvider.getContext("test-session", {} as any);
+      const result = await provider.getContext("test-session", {} as any);
       expect(result).not.toBeNull();
       expect(result!.content).toContain("Soul");
       expect(result!.content).toContain("Session persona");
@@ -328,36 +316,19 @@ describe("wopr-plugin-soul", () => {
     });
 
     it("should return null when no SOUL.md exists anywhere", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
 
-      const result = await soulContextProvider.getContext("test-session", {} as any);
+      const result = await provider.getContext("test-session", {} as any);
       expect(result).toBeNull();
     });
 
-    it("should return null when SOUL.md is empty/whitespace", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue("   \n  ");
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
+    it("should return null when SOUL.md content is empty/whitespace", async () => {
+      mockSession.getContext.mockResolvedValue("   \n  ");
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
 
-      const result = await soulContextProvider.getContext("test-session", {} as any);
-      expect(result).toBeNull();
-    });
-
-    it("should return null when readFileSync throws", async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        throw new Error("Permission denied");
-      });
-      const { soulContextProvider } = await import(
-        "../src/soul-context-provider.js"
-      );
-
-      const result = await soulContextProvider.getContext("test-session", {} as any);
+      const result = await provider.getContext("test-session", {} as any);
       expect(result).toBeNull();
     });
   });
