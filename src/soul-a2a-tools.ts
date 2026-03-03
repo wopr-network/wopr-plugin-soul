@@ -77,7 +77,7 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
             },
           },
         },
-        async handler(args) {
+        async handler(args: unknown) {
           const { content, section, sectionContent } = args as {
             content?: string;
             section?: string;
@@ -91,8 +91,15 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
           if (content !== undefined) {
             try {
               await sessionApi.setContext(sessionName, "SOUL.md", content, "session");
-            } catch (_error: unknown) {
-              return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
+            } catch (error: unknown) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Failed to update SOUL.md: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                ],
+              };
             }
             return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
           }
@@ -112,8 +119,15 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
                 existing += `\n${newSection}`;
               }
               await sessionApi.setContext(sessionName, "SOUL.md", existing, "session");
-            } catch (_error: unknown) {
-              return { content: [{ type: "text", text: `SOUL.md section "${section}" updated` }] };
+            } catch (error: unknown) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Failed to update SOUL.md: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                ],
+              };
             }
             return { content: [{ type: "text", text: `SOUL.md section "${section}" updated` }] };
           }

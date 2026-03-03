@@ -301,12 +301,12 @@ describe("wopr-plugin-soul", () => {
       expect(result.content[0].text).toContain("Provide");
     });
 
-    it("soul.update should return success when setContext throws", async () => {
+    it("soul.update should return error when setContext throws", async () => {
       mockSession.setContext.mockRejectedValue(new Error("DB error"));
       const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
       const config = buildSoulA2ATools(mockCtx as any, "test-session");
       const result = await config.tools[1].handler({ content: "New content" });
-      expect(result.content[0].text).toBe("SOUL.md replaced entirely");
+      expect(result.content[0].text).toBe("Failed to update SOUL.md: DB error");
     });
   });
 
