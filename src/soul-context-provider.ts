@@ -21,34 +21,42 @@ export function buildSoulContextProvider(ctx: WOPRPluginContext): ContextProvide
     enabled: true,
 
     async getContext(session: string, _message: MessageInfo): Promise<ContextPart | null> {
-      const sessionApi = (ctx as unknown as { session: SessionApi }).session;
+      const sessionApi = (ctx as unknown as { session?: SessionApi }).session;
 
-      // Try global identity first
-      const globalContent = await sessionApi.getContext("__global__", "SOUL.md");
-      if (globalContent?.trim()) {
-        return {
-          content: `## Soul (Global)\n\n${globalContent}`,
-          role: "system",
-          metadata: {
-            source: "soul",
-            priority: 8,
-            location: "global",
-          },
-        };
+      if (!sessionApi) {
+        return null;
       }
 
-      // Fall back to session
-      const sessionContent = await sessionApi.getContext(session, "SOUL.md");
-      if (sessionContent?.trim()) {
-        return {
-          content: `## Soul\n\n${sessionContent}`,
-          role: "system",
-          metadata: {
-            source: "soul",
-            priority: 8,
-            location: "session",
-          },
-        };
+      try {
+        // Try global identity first
+        const globalContent = await sessionApi.getContext("__global__", "SOUL.md");
+        if (globalContent?.trim()) {
+          return {
+            content: `## Soul (Global)\n\n${globalContent}`,
+            role: "system",
+            metadata: {
+              source: "soul",
+              priority: 8,
+              location: "global",
+            },
+          };
+        }
+
+        // Fall back to session
+        const sessionContent = await sessionApi.getContext(session, "SOUL.md");
+        if (sessionContent?.trim()) {
+          return {
+            content: `## Soul\n\n${sessionContent}`,
+            role: "system",
+            metadata: {
+              source: "soul",
+              priority: 8,
+              location: "session",
+            },
+          };
+        }
+      } catch (_error: unknown) {
+        return null;
       }
 
       return null;

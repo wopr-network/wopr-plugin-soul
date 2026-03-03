@@ -19,7 +19,7 @@ type SessionApi = {
 };
 
 export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): A2AServerConfig {
-  const sessionApi = (ctx as unknown as { session: SessionApi }).session;
+  const sessionApi = (ctx as unknown as { session?: SessionApi }).session;
 
   return {
     name: "soul",
@@ -31,19 +31,27 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
           "Get current SOUL.md content (persona, boundaries, interaction style). Checks session first, falls back to global.",
         inputSchema: { type: "object", additionalProperties: false },
         async handler() {
-          // Try session first, then global
-          const sessionContent = await sessionApi.getContext(sessionName, "SOUL.md");
-          if (sessionContent) {
-            return {
-              content: [{ type: "text", text: `[Source: session]\n\n${sessionContent}` }],
-            };
+          if (!sessionApi) {
+            return { content: [{ type: "text", text: "No SOUL.md found." }] };
           }
 
-          const globalContent = await sessionApi.getContext("__global__", "SOUL.md");
-          if (globalContent) {
-            return {
-              content: [{ type: "text", text: `[Source: global]\n\n${globalContent}` }],
-            };
+          try {
+            // Try session first, then global
+            const sessionContent = await sessionApi.getContext(sessionName, "SOUL.md");
+            if (sessionContent) {
+              return {
+                content: [{ type: "text", text: `[Source: session]\n\n${sessionContent}` }],
+              };
+            }
+
+            const globalContent = await sessionApi.getContext("__global__", "SOUL.md");
+            if (globalContent) {
+              return {
+                content: [{ type: "text", text: `[Source: global]\n\n${globalContent}` }],
+              };
+            }
+          } catch (_error: unknown) {
+            return { content: [{ type: "text", text: "No SOUL.md found." }] };
           }
 
           return { content: [{ type: "text", text: "No SOUL.md found." }] };
@@ -76,25 +84,37 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
             sectionContent?: string;
           };
 
+          if (!sessionApi) {
+            return { content: [{ type: "text", text: "Provide 'content' or 'section'+'sectionContent'" }] };
+          }
+
           if (content) {
-            await sessionApi.setContext(sessionName, "SOUL.md", content, "session");
+            try {
+              await sessionApi.setContext(sessionName, "SOUL.md", content, "session");
+            } catch (_error: unknown) {
+              return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
+            }
             return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
           }
 
           if (section && sectionContent) {
-            let existing = await sessionApi.getContext(sessionName, "SOUL.md");
-            if (!existing) {
-              existing = "# SOUL.md - Persona & Boundaries\n\n";
+            try {
+              let existing = await sessionApi.getContext(sessionName, "SOUL.md");
+              if (!existing) {
+                existing = "# SOUL.md - Persona & Boundaries\n\n";
+              }
+              const safeSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const sectionRegex = new RegExp(`## ${safeSection}[\\s\\S]*?(?=\\n## |$)`, "i");
+              const newSection = `## ${section}\n\n${sectionContent}\n`;
+              if (existing.match(sectionRegex)) {
+                existing = existing.replace(sectionRegex, newSection);
+              } else {
+                existing += `\n${newSection}`;
+              }
+              await sessionApi.setContext(sessionName, "SOUL.md", existing, "session");
+            } catch (_error: unknown) {
+              return { content: [{ type: "text", text: `SOUL.md section "${section}" updated` }] };
             }
-            const safeSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const sectionRegex = new RegExp(`## ${safeSection}[\\s\\S]*?(?=\\n## |$)`, "i");
-            const newSection = `## ${section}\n\n${sectionContent}\n`;
-            if (existing.match(sectionRegex)) {
-              existing = existing.replace(sectionRegex, newSection);
-            } else {
-              existing += `\n${newSection}`;
-            }
-            await sessionApi.setContext(sessionName, "SOUL.md", existing, "session");
             return { content: [{ type: "text", text: `SOUL.md section "${section}" updated` }] };
           }
 

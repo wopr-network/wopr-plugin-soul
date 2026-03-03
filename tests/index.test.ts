@@ -274,6 +274,58 @@ describe("wopr-plugin-soul", () => {
     });
   });
 
+  describe("soul A2A tools - session guard and error handling", () => {
+    it("soul.get should return 'No SOUL.md found.' when ctx has no session", async () => {
+      const ctxNoSession = { ...mockCtx, session: undefined };
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools(ctxNoSession as any, "test-session");
+      const result = await config.tools[0].handler({});
+      expect(result.content[0].text).toBe("No SOUL.md found.");
+    });
+
+    it("soul.get should return 'No SOUL.md found.' when getContext throws", async () => {
+      mockSession.getContext.mockRejectedValue(new Error("DB error"));
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
+      const result = await config.tools[0].handler({});
+      expect(result.content[0].text).toBe("No SOUL.md found.");
+    });
+
+    it("soul.update should return prompt message when ctx has no session", async () => {
+      const ctxNoSession = { ...mockCtx, session: undefined };
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools(ctxNoSession as any, "test-session");
+      const result = await config.tools[1].handler({ content: "New content" });
+      expect(result.content[0].text).toContain("Provide");
+    });
+
+    it("soul.update should return success when setContext throws", async () => {
+      mockSession.setContext.mockRejectedValue(new Error("DB error"));
+      const { buildSoulA2ATools } = await import("../src/soul-a2a-tools.js");
+      const config = buildSoulA2ATools(mockCtx as any, "test-session");
+      const result = await config.tools[1].handler({ content: "New content" });
+      expect(result.content[0].text).toBe("SOUL.md replaced entirely");
+    });
+  });
+
+  describe("soul context provider - session guard and error handling", () => {
+    it("should return null when ctx has no session", async () => {
+      const ctxNoSession = { ...mockCtx, session: undefined };
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(ctxNoSession as any);
+      const result = await provider.getContext("test-session", {} as any);
+      expect(result).toBeNull();
+    });
+
+    it("should return null when getContext throws", async () => {
+      mockSession.getContext.mockRejectedValue(new Error("DB error"));
+      const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
+      const provider = buildSoulContextProvider(mockCtx as any);
+      const result = await provider.getContext("test-session", {} as any);
+      expect(result).toBeNull();
+    });
+  });
+
   describe("soul context provider", () => {
     it("should have correct name, priority, and enabled flag", async () => {
       const { buildSoulContextProvider } = await import("../src/soul-context-provider.js");
