@@ -18,6 +18,8 @@ const mockCtx = {
 describe("wopr-plugin-soul", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    mockCtx.getSessions.mockReturnValue(["test-session"]);
     mockSession.getContext.mockResolvedValue(null);
     mockSession.setContext.mockResolvedValue(undefined);
   });

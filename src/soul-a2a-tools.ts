@@ -88,7 +88,7 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
             return { content: [{ type: "text", text: "Provide 'content' or 'section'+'sectionContent'" }] };
           }
 
-          if (content) {
+          if (content !== undefined) {
             try {
               await sessionApi.setContext(sessionName, "SOUL.md", content, "session");
             } catch (_error: unknown) {
@@ -97,7 +97,7 @@ export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): 
             return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
           }
 
-          if (section && sectionContent) {
+          if (section !== undefined && sectionContent !== undefined) {
             try {
               let existing = await sessionApi.getContext(sessionName, "SOUL.md");
               if (!existing) {
