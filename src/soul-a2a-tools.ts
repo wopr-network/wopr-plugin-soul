@@ -1,39 +1,26 @@
 /**
- * Soul A2A tools: soul_get, soul_update
+ * Soul A2A tools: soul.get, soul.update
  *
  * Provides agent-to-agent tools for reading and updating SOUL.md,
  * the persistent persona/boundaries/interaction-style file.
  *
- * Path resolution order:
- *   1. Global identity dir ($WOPR_GLOBAL_IDENTITY or /data/identity) + SOUL.md
- *   2. Session dir ($WOPR_HOME/sessions/<session>) + SOUL.md
+ * Resolution order for reads:
+ *   1. Session: getContext(sessionName, "SOUL.md")
+ *   2. Global: getContext("__global__", "SOUL.md")
+ *
+ * Writes always go to session scope.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import type { A2AServerConfig } from "@wopr-network/plugin-types";
+import type { A2AServerConfig, WOPRPluginContext } from "@wopr-network/plugin-types";
 
-const WOPR_HOME = process.env.WOPR_HOME || join(homedir(), "wopr");
-const SESSIONS_DIR = join(WOPR_HOME, "sessions");
-const GLOBAL_IDENTITY_DIR = process.env.WOPR_GLOBAL_IDENTITY || "/data/identity";
+type SessionApi = {
+  getContext(sessionName: string, filename: string): Promise<string | null>;
+  setContext(sessionName: string, filename: string, content: string, source: "global" | "session"): Promise<void>;
+};
 
-/**
- * Resolve a root-level file by checking global identity first, then session dir.
- */
-function resolveRootFile(sessionDir: string, filename: string): { path: string; exists: boolean; isGlobal: boolean } {
-  const globalPath = join(GLOBAL_IDENTITY_DIR, filename);
-  if (existsSync(globalPath)) {
-    return { path: globalPath, exists: true, isGlobal: true };
-  }
-  const sessionPath = join(sessionDir, filename);
-  if (existsSync(sessionPath)) {
-    return { path: sessionPath, exists: true, isGlobal: false };
-  }
-  return { path: sessionPath, exists: false, isGlobal: false };
-}
+export function buildSoulA2ATools(ctx: WOPRPluginContext, sessionName: string): A2AServerConfig {
+  const sessionApi = (ctx as unknown as { session?: SessionApi }).session;
 
-export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
   return {
     name: "soul",
     version: "1.0.0",
@@ -41,23 +28,33 @@ export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
       {
         name: "soul.get",
         description:
-          "Get current SOUL.md content (persona, boundaries, interaction style). Checks global identity first.",
+          "Get current SOUL.md content (persona, boundaries, interaction style). Checks session first, falls back to global.",
         inputSchema: { type: "object", additionalProperties: false },
         async handler() {
-          const sessionDir = join(SESSIONS_DIR, sessionName);
-          const resolved = resolveRootFile(sessionDir, "SOUL.md");
-          if (!resolved.exists) {
+          if (!sessionApi) {
             return { content: [{ type: "text", text: "No SOUL.md found." }] };
           }
-          const content = readFileSync(resolved.path, "utf-8");
-          return {
-            content: [
-              {
-                type: "text",
-                text: `[Source: ${resolved.isGlobal ? "global" : "session"}]\n\n${content}`,
-              },
-            ],
-          };
+
+          try {
+            // Try session first, then global
+            const sessionContent = await sessionApi.getContext(sessionName, "SOUL.md");
+            if (sessionContent) {
+              return {
+                content: [{ type: "text", text: `[Source: session]\n\n${sessionContent}` }],
+              };
+            }
+
+            const globalContent = await sessionApi.getContext("__global__", "SOUL.md");
+            if (globalContent) {
+              return {
+                content: [{ type: "text", text: `[Source: global]\n\n${globalContent}` }],
+              };
+            }
+          } catch (_error: unknown) {
+            return { content: [{ type: "text", text: "No SOUL.md found." }] };
+          }
+
+          return { content: [{ type: "text", text: "No SOUL.md found." }] };
         },
       },
       {
@@ -80,33 +77,58 @@ export function buildSoulA2ATools(sessionName: string): A2AServerConfig {
             },
           },
         },
-        async handler(args) {
+        async handler(args: unknown) {
           const { content, section, sectionContent } = args as {
             content?: string;
             section?: string;
             sectionContent?: string;
           };
-          const sessionDir = join(SESSIONS_DIR, sessionName);
-          const soulPath = join(sessionDir, "SOUL.md");
 
-          if (content) {
-            writeFileSync(soulPath, content);
+          if (!sessionApi) {
+            return { content: [{ type: "text", text: "Provide 'content' or 'section'+'sectionContent'" }] };
+          }
+
+          if (content !== undefined) {
+            try {
+              await sessionApi.setContext(sessionName, "SOUL.md", content, "session");
+            } catch (error: unknown) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Failed to update SOUL.md: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                ],
+              };
+            }
             return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
           }
 
-          if (section && sectionContent) {
-            let existing = existsSync(soulPath)
-              ? readFileSync(soulPath, "utf-8")
-              : "# SOUL.md - Persona & Boundaries\n\n";
-            const safeSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const sectionRegex = new RegExp(`## ${safeSection}[\\s\\S]*?(?=\\n## |$)`, "i");
-            const newSection = `## ${section}\n\n${sectionContent}\n`;
-            if (existing.match(sectionRegex)) {
-              existing = existing.replace(sectionRegex, newSection);
-            } else {
-              existing += `\n${newSection}`;
+          if (section !== undefined && sectionContent !== undefined) {
+            try {
+              let existing = await sessionApi.getContext(sessionName, "SOUL.md");
+              if (!existing) {
+                existing = "# SOUL.md - Persona & Boundaries\n\n";
+              }
+              const safeSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const sectionRegex = new RegExp(`## ${safeSection}[\\s\\S]*?(?=\\n## |$)`, "i");
+              const newSection = `## ${section}\n\n${sectionContent}\n`;
+              if (existing.match(sectionRegex)) {
+                existing = existing.replace(sectionRegex, newSection);
+              } else {
+                existing += `\n${newSection}`;
+              }
+              await sessionApi.setContext(sessionName, "SOUL.md", existing, "session");
+            } catch (error: unknown) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Failed to update SOUL.md: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                ],
+              };
             }
-            writeFileSync(soulPath, existing);
             return { content: [{ type: "text", text: `SOUL.md section "${section}" updated` }] };
           }
 
