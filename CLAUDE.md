@@ -29,3 +29,14 @@ npm run check     # biome check + tsc --noEmit
 - All catch blocks use `catch (error: unknown)` or `catch (_error: unknown)`
 - Shutdown is idempotent (`if (!ctx) return`)
 - No `isError` in A2A tool returns
+
+## Version Control: Prefer jj
+
+Use `jj` (Jujutsu) for all VCS operations instead of `git`:
+- `jj status`, `jj diff`, `jj log` for inspection
+- `jj new` to start a change, `jj describe` to set the message
+- `jj commit` to commit, `jj push` to push
+- `jj squash`, `jj rebase`, `jj edit` for history manipulation
+
+Fall back to `git` only for operations not yet supported by `jj`.
+
