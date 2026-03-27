@@ -1,3 +1,11 @@
+# ⚠️ This package has moved
+
+This package is now maintained in the [wopr-plugins monorepo](https://github.com/wopr-network/wopr-plugins/tree/main/packages/plugin-soul).
+
+This repository is archived and no longer accepts contributions.
+
+---
+
 # @wopr-network/wopr-plugin-soul
 
 > Soul/personality plugin for WOPR — give your agent a persistent identity and character via SOUL.md.
